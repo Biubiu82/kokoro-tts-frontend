@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kokoro TTS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .glass {
+            background: rgba(17, 25, 40, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.125);
+        }
+        body {
+            background: linear-gradient(135deg, #1a1c2c 0%, #4a1942 100%);
+            min-height: 100vh;
+        }
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #8b5cf6;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .range-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #8b5cf6;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="glass p-8 w-full max-w-2xl">
+        <h1 class="text-3xl font-bold text-white mb-8 text-center">Kokoro Text-to-Speech</h1>
+        
+        <form id="ttsForm" class="space-y-6">
+            <div>
+                <label class="block text-white mb-2">Văn bản</label>
+                <textarea 
+                    id="text" 
+                    name="text" 
+                    rows="4" 
+                    class="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    required
+                    placeholder="Nhập văn bản cần chuyển thành giọng nói..."
+                ></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-white mb-2">Ngôn ngữ</label>
+                    <select 
+                        id="lang" 
+                        name="lang" 
+                        class="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-700 focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                    >
+                        <option value="ja">Tiếng Nhật</option>
+                        <option value="en">Tiếng Anh</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-white mb-2">Tốc độ: <span id="speedValue">1.0</span>x</label>
+                    <input 
+                        type="range" 
+                        id="speed" 
+                        name="speed" 
+                        min="0.5" 
+                        max="2.0" 
+                        step="0.1" 
+                        value="1.0"
+                        class="range-slider w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    >
+                </div>
+            </div>
+
+            <button 
+                type="submit" 
+                class="w-full py-3 px-6 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition duration-200 flex items-center justify-center gap-2"
+                id="submitButton"
+            >
+                <span id="buttonText">Chuyển thành giọng nói</span>
+                <div id="loading" class="hidden">
+                    <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            </button>
+
+            <div id="audioContainer" class="hidden">
+                <audio 
+                    id="audioPlayer" 
+                    controls 
+                    class="w-full mt-4"
+                >
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+
+            <div id="error" class="hidden mt-4 p-4 bg-red-500 bg-opacity-20 border border-red-500 rounded-lg text-red-100">
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_URL = 'http://localhost:8880/tts';
+
+        // DOM Elements
+        const form = document.getElementById('ttsForm');
+        const speedInput = document.getElementById('speed');
+        const speedValue = document.getElementById('speedValue');
+        const buttonText = document.getElementById('buttonText');
+        const loading = document.getElementById('loading');
+        const audioContainer = document.getElementById('audioContainer');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const submitButton = document.getElementById('submitButton');
+        const errorDiv = document.getElementById('error');
+
+        // Update speed value display
+        speedInput.addEventListener('input', (e) => {
+            speedValue.textContent = e.target.value;
+        });
+
+        // Handle form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Reset error state
+            errorDiv.classList.add('hidden');
+            errorDiv.textContent = '';
+            
+            // Show loading state
+            buttonText.textContent = 'Đang xử lý...';
+            loading.classList.remove('hidden');
+            submitButton.disabled = true;
+            
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || 'Network response was not ok');
+                }
+
+                // Get the audio blob
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                // Update audio player
+                audioPlayer.src = audioUrl;
+                audioContainer.classList.remove('hidden');
+                audioPlayer.play();
+
+            } catch (error) {
+                console.error('Error:', error);
+                errorDiv.textContent = `Lỗi: ${error.message}`;
+                errorDiv.classList.remove('hidden');
+            } finally {
+                // Reset button state
+                buttonText.textContent = 'Chuyển thành giọng nói';
+                loading.classList.add('hidden');
+                submitButton.disabled = false;
+            }
+        });
+
+        // Clean up audio URLs when creating new ones
+        audioPlayer.addEventListener('loadstart', () => {
+            const oldSrc = audioPlayer.src;
+            if (oldSrc) {
+                URL.revokeObjectURL(oldSrc);
+            }
+        });
+    </script>
+</body>
+</html> 
